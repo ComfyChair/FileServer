@@ -1,13 +1,33 @@
 package server;
 
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.IOException;
+import java.net.InetAddress;
+import java.net.ServerSocket;
+import java.net.Socket;
 import java.util.HashMap;
 import java.util.Map;
 
 public class Server {
+    public static final String ADDRESS = "127.0.0.1";
+    public static final int PORT = 23456;
     private final Map<String, Boolean> files = new HashMap<>();
 
-    Server() {
+    public Server() {
         initStorage();
+        try (ServerSocket serverSocket = new ServerSocket(PORT, 50, InetAddress.getByName(ADDRESS))) {
+            System.out.println("Server started!");
+            Socket socket = serverSocket.accept();
+            DataInputStream input = new DataInputStream(socket.getInputStream());
+            DataOutputStream output = new DataOutputStream(socket.getOutputStream());
+            System.out.printf("Received: %s\n", input.readUTF());
+            String answer = "All files were sent!";
+            output.writeUTF(answer);
+            System.out.printf("Sent: %s\n", answer);
+        } catch (IOException e) {
+            System.err.println("IO error: " + e.getMessage());
+        }
     }
 
     private void initStorage() {
