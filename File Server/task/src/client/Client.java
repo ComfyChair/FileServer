@@ -1,11 +1,15 @@
 package client;
 
+import server.Request;
+import server.Response;
+
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.Socket;
 import java.net.UnknownHostException;
+import java.util.concurrent.TimeUnit;
 
 public class Client {
     Socket socket;
@@ -17,7 +21,6 @@ public class Client {
             this.socket = new Socket(InetAddress.getByName(address), port);
             in = new DataInputStream(socket.getInputStream());
             out = new DataOutputStream(socket.getOutputStream());
-            System.out.println("Client started!");
         } catch (UnknownHostException e) {
             System.err.println("Unknown host: " + address);
         } catch (IOException e) {
@@ -25,19 +28,14 @@ public class Client {
         }
     }
 
-    public void sendRequest(String request) {
+    public Response sendRequest(Request request) {
         try {
-            out.writeUTF(request);
+            out.writeUTF(request.toString());
+            if (request.type() != Request.Type.EXIT) {
+                return Response.builder(in.readUTF());
+            }
         } catch (IOException e) {
             System.err.println("Client I/O Exception on send:\n" + e.getMessage());
-        }
-    }
-
-    public String getResponse() {
-        try {
-            return in.readUTF();
-        } catch (IOException e) {
-            System.err.println("Client I/O Exception on receive:\n" + e.getMessage());
         }
         return null;
     }
