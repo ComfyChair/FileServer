@@ -1,7 +1,5 @@
 package client;
 
-import server.Server;
-
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Logger;
 

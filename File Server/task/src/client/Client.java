@@ -1,7 +1,9 @@
 package client;
 
+import server.FileIdentifier;
 import server.Request;
 import server.Request.RequestType;
+import server.Response;
 import server.Server;
 
 import java.io.*;
@@ -13,12 +15,13 @@ import java.util.Map;
 import java.util.Scanner;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
 import java.util.logging.Logger;
 
+import static java.net.HttpURLConnection.*;
 
 public class Client {
     static Logger logger = Logger.getLogger(Client.class.getName());
+    private static final String EXPLAIN_RESPONSE = "The response says that";
     private static final int POOL_SIZE = Runtime.getRuntime().availableProcessors();
     private static final Path dataPath = Path.of(System.getProperty("user.dir"),
              "src", "client", "data");
@@ -68,25 +71,24 @@ public class Client {
         } else {
             System.out.println("Enter identifier of the file to be saved on server: ");
             String destName = scanner.nextLine();
-            String name = String.format("%s %s", srcName, destName);
-            Request request = new Request(RequestType.PUT, name);
+            Request request = new Request(RequestType.PUT, new FileIdentifier(FileIdentifier.Type.BY_NAME, destName));
             executor.submit(() -> sendRequest(request, file));
         }
     }
 
     private void sendGetRequest(Scanner scanner) {
-        Request.Identifier identifier = readIdentifier(scanner);
-        Request request = new Request(RequestType.GET, identifier.type(), identifier.value());
+        FileIdentifier identifier = readIdentifier(scanner);
+        Request request = new Request(RequestType.GET, identifier);
         executor.submit(() -> sendRequest(request, null));
     }
 
     private void sendDeleteRequest(Scanner scanner) {
-        Request.Identifier identifier = readIdentifier(scanner);
-        Request request = new Request(RequestType.DELETE, identifier.type(), identifier.value());
+        FileIdentifier identifier = readIdentifier(scanner);
+        Request request = new Request(RequestType.DELETE, identifier);
         executor.submit(() -> sendRequest(request, null));
     }
 
-    private Request.Identifier readIdentifier(Scanner scanner) {
+    private FileIdentifier readIdentifier(Scanner scanner) {
         System.out.println("Do you want to get the file by identifier or by id (1 - name, 2 - id):");
         String by = "";
         while (by.isEmpty()) {
@@ -96,10 +98,10 @@ public class Client {
                 default -> System.out.println("Invalid input");
             }
         }
-        Request.IdentifierType type = Request.IdentifierType.valueOf(String.format("BY_%s", by.toUpperCase()));
+        FileIdentifier.Type type = FileIdentifier.Type.valueOf(String.format("BY_%s", by.toUpperCase()));
         System.out.printf("Enter %s: ", by);
         String identifier = scanner.nextLine();
-        return new Request.Identifier(type, identifier);
+        return new FileIdentifier(type, identifier);
     }
 
     private synchronized void sendRequest(Request request, File file) {
@@ -108,7 +110,6 @@ public class Client {
             int id = nextId();
             request.setId(id);
             out.writeUTF(request.toString());
-            logger.info("Send request");
             requests.put(id, request);
             if (file != null) {
                 int fileLength = (int) file.length();
@@ -121,21 +122,69 @@ public class Client {
                     logger.warning("Error while writing data to output stream");
                 }
             }
-            logger.info("Sending done for request: " + request.getRequestId());
+            System.out.println("The request was sent.");
         } catch (IOException e) {
             System.err.println("I/O Exception on sending request: " + e.getMessage());
         }
     }
 
     private void processResponses() {
-        while (true) {
+        while (Thread.currentThread().isAlive()) {
             try {
-                Thread.sleep(10000);
-            } catch (InterruptedException e) {
-
+                logger.info(String.format("Thread %s Waiting for response", Thread.currentThread().getName()));
+                Response response = Response.parse(in.readUTF());
+                logger.info("Received response: " + response);
+                Request request = requests.get(response.getRequestId());
+                logger.info("   belongs to requestType: " + request.getRequestType());
+                switch (request.getRequestType()){
+                    case GET -> {
+                        switch (response.getCode()){
+                            case HTTP_OK -> executor.submit(this::saveFile);
+                            case HTTP_NOT_FOUND -> System.out.printf("%s  this file is not found!%n", EXPLAIN_RESPONSE);
+                            default -> System.out.println("Invalid response");
+                        }
+                    }
+                    case PUT -> {
+                        switch (response.getCode()){
+                            case HTTP_OK -> System.out.printf("%s file is saved! ID = %s%n", EXPLAIN_RESPONSE, response.getInfo());
+                            case HTTP_FORBIDDEN -> System.out.printf("%s file is not saved!%n", EXPLAIN_RESPONSE);
+                            default -> System.out.println("Invalid response");
+                        }
+                    }
+                    case DELETE -> {
+                        switch (response.getCode()) {
+                            case HTTP_OK -> System.out.printf("%s this file was deleted successfully!%n", EXPLAIN_RESPONSE);
+                            case HTTP_NOT_FOUND -> System.out.printf("%s  this file is not found!%n", EXPLAIN_RESPONSE);
+                            default -> System.out.println("Invalid response");
+                        }
+                    }
+                    default -> System.out.println("Unexpected response for request type " + request.getRequestType());
+                }
+            } catch (IOException e) {
+                logger.severe("I/O Exception while waiting for response: " + e.getMessage());
+                e.printStackTrace();
+                System.exit(1);
             }
-            //TODO: await responses
         }
+    }
+
+    private void saveFile() {
+        Scanner scanner = new Scanner(System.in);
+        System.out.println("The file was downloaded! Specify a name for it: ");
+        String fileName = scanner.nextLine();
+        File file = dataPath.resolve(fileName).toFile();
+        try (BufferedOutputStream bos = new BufferedOutputStream(new FileOutputStream(file))){
+            int fileLength = in.readInt();
+            logger.info("Reading from DataStream: " + fileLength + " bytes");
+            byte[] buffer = new byte[fileLength];
+            in.readFully(buffer, 0, fileLength);
+            logger.info("Writing to output stream");
+            bos.write(buffer, 0, fileLength);
+            logger.info("Writing done for " + file.getName());
+        } catch (IOException e) {
+            logger.warning("IO error: " + e.getMessage());
+        }
+        System.out.println("File saved on the hard drive!");
     }
 
     private void exit() {
