@@ -2,6 +2,7 @@ package client;
 
 import server.Request;
 import server.Request.RequestType;
+import server.Server;
 
 import java.io.*;
 import java.net.InetAddress;
@@ -12,49 +13,50 @@ import java.util.Map;
 import java.util.Scanner;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.logging.Logger;
 
-import static client.Main.logger;
 
 public class Client {
+    static Logger logger = Logger.getLogger(Client.class.getName());
     private static final int POOL_SIZE = Runtime.getRuntime().availableProcessors();
-    //private static final Path dataPath = Path.of(System.getProperty("user.dir"),
-            //"src", "client", "data");
     private static final Path dataPath = Path.of(System.getProperty("user.dir"),
-            "File Server", "task", "src", "client", "data");
+             "src", "client", "data");
     private DataInputStream in;
     private DataOutputStream out;
     private final ExecutorService executor;
     private int requestIdCounter = 0;
     private final Map<Integer, Request> requests = new HashMap<>();
 
-    public Client(String address, int port) {
+    public Client() {
         if (!dataPath.toFile().exists()) {
             dataPath.toFile().mkdirs();
         }
         executor = Executors.newFixedThreadPool(POOL_SIZE);
-        try (Socket socket = new Socket(InetAddress.getByName(address), port)) {
+    }
+
+    public void connect() {
+        try (Socket socket = new Socket(InetAddress.getByName(Server.ADDRESS), Server.PORT)) {
             in = new DataInputStream(socket.getInputStream());
             out = new DataOutputStream(socket.getOutputStream());
+            Scanner scanner = new Scanner(System.in);
+            String action = "";
+            executor.submit(this::processResponses);
+            while (!action.equals("exit")) {
+                System.out.println("Enter action (1 - get a file, 2 - save a file, 3 - delete a file): ");
+                action = scanner.nextLine();
+                switch (action) {
+                    case "1" -> sendGetRequest(scanner);
+                    case "2" -> sendPutRequest(scanner);
+                    case "3" -> sendDeleteRequest(scanner);
+                    case "exit" -> exit();
+                }
+            }
         } catch (IOException e) {
             System.err.println("I/O Exception: " + e.getMessage());
             System.exit(1);
         }
-    }
-
-    public void startCLI() {
-        Scanner scanner = new Scanner(System.in);
-        String action = "";
-        executor.submit(this::processResponses);
-        while (!action.equals("exit")) {
-            System.out.println("Enter action (1 - get a file, 2 - save a file, 3 - delete a file): ");
-            action = scanner.nextLine();
-            switch (action) {
-                case "1" -> sendGetRequest(scanner);
-                case "2" -> sendPutRequest(scanner);
-                case "3" -> sendDeleteRequest(scanner);
-                case "exit" -> exit();
-            }
-        }
+        System.exit(0);
     }
 
     private void sendPutRequest(Scanner scanner) {
@@ -101,46 +103,50 @@ public class Client {
     }
 
     private synchronized void sendRequest(Request request, File file) {
+        logger.info("Sending request");
         try {
             int id = nextId();
             request.setId(id);
             out.writeUTF(request.toString());
+            logger.info("Send request");
             requests.put(id, request);
             if (file != null) {
-                out.writeInt((int) file.length());
-                try (BufferedInputStream bis = new BufferedInputStream(new FileInputStream(file))
-                ){
-                    logger.info(String.format("Sending data: %d bytes", ((int) file.length())));
-                    byte[] buffer = new byte[bis.available()];
-                    while (bis.read(buffer, 0, bis.available()) > 0) {
-                        out.write(buffer, 0, bis.available());
-                    }
+                int fileLength = (int) file.length();
+                out.writeInt(fileLength);
+                logger.info("Sending file length: " + file.length());
+                try (BufferedInputStream bis = new BufferedInputStream(new FileInputStream(file))) {
+                    logger.info(String.format("Sending data: %d bytes", fileLength));
+                    bis.transferTo(out);
                 } catch (IOException e) {
                     logger.warning("Error while writing data to output stream");
                 }
             }
-            logger.info("Sending done for request: " + request);
+            logger.info("Sending done for request: " + request.getRequestId());
         } catch (IOException e) {
-            System.err.println("I/O Exception: " + e.getMessage());
+            System.err.println("I/O Exception on sending request: " + e.getMessage());
         }
     }
 
     private void processResponses() {
         while (true) {
-            //TODO: Read responses from InputStream and output user feedback
+            try {
+                Thread.sleep(10000);
+            } catch (InterruptedException e) {
+
+            }
+            //TODO: await responses
         }
     }
 
     private void exit() {
+        logger.info("Exiting...");
         executor.shutdown();
         try {
             out.writeUTF(new Request(RequestType.EXIT).toString());
-            in.close();
-            out.close();
+            logger.info("Send exit request");
         } catch (IOException e) {
             System.err.println("I/O Exception: " + e.getMessage());
         }
-        System.exit(0);
     }
 
     private synchronized int nextId()

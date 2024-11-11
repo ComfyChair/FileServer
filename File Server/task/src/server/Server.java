@@ -7,6 +7,8 @@ import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.file.Path;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import static java.net.HttpURLConnection.*;
 import static server.Main.logger;
@@ -18,13 +20,14 @@ public class Server {
     private static final Path storagePath = Path.of(System.getProperty("user.dir"),
             "src", "server", "data");
     private Storage fileStorage;
+    private ExecutorService threadPool;
 
     public Server() {
         initStorage();
-        openConnection();
+        threadPool = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
     }
 
-    private void openConnection() {
+    void start() {
         System.out.println("Server started!");
         while(true) {
             try (ServerSocket serverSocket = new ServerSocket(PORT, 50, InetAddress.getByName(ADDRESS))) {
@@ -33,12 +36,18 @@ public class Server {
                          DataInputStream input = new DataInputStream(socket.getInputStream());
                          DataOutputStream output = new DataOutputStream(socket.getOutputStream())
                     ) {
-                        Request request = Request.parse(input.readUTF());
-                        switch (request.getRequestType()) {
-                            case GET -> getFile(output, request);
-                            case DELETE -> deleteFile(output, request);
-                            case PUT -> putFile(input, output, request);
-                            case EXIT -> shutdown();
+                        String rawRequest = input.readUTF();
+                        try {
+                            Request request = Request.parse(rawRequest);
+                            logger.info("Got request: " + request);
+                            switch (request.getRequestType()) {
+                                case GET -> serveGetRequest(output, request);
+                                case DELETE -> serveDeleteRequest(output, request);
+                                case PUT -> servePutRequest(input, output, request);
+                                case EXIT -> shutdown();
+                            }
+                        } catch (IllegalArgumentException e) {
+                            logger.severe("Invalid request: " + rawRequest);
                         }
                     }
                 }
@@ -74,7 +83,7 @@ public class Server {
         };
     }
 
-    public void putFile(DataInputStream fromClient, DataOutputStream toClient, Request request) {
+    public void servePutRequest(DataInputStream fromClient, DataOutputStream toClient, Request request) {
         String fileName = request.getFileIdentifier();
         File file = storagePath.resolve(fileName).toFile();
         int requestId = request.getRequestId();
@@ -88,7 +97,8 @@ public class Server {
         sendResponse(toClient, requestId, response);
     }
 
-    public void getFile(DataOutputStream toClient, Request request) {
+    public void serveGetRequest(DataOutputStream toClient, Request request) {
+        logger.info("Processing GET request: ");
         String fileName = getFileName(request.getIdentifierType(), request.getFileIdentifier());
         File file = storagePath.resolve(fileName).toFile();
         int requestId = request.getRequestId();
@@ -101,7 +111,8 @@ public class Server {
         sendResponse(toClient, requestId, response);
     }
 
-    public void deleteFile(DataOutputStream toClient, Request request) {
+    public void serveDeleteRequest(DataOutputStream toClient, Request request) {
+        logger.info("Processing DELETE request: ");
         String fileName = getFileName(request.getIdentifierType(), request.getFileIdentifier());
         File file = storagePath.resolve(fileName).toFile();
         int requestId = request.getRequestId();
@@ -120,6 +131,7 @@ public class Server {
     }
 
     private static void sendResponse(DataOutputStream toClient, int requestId, Response response) {
+        logger.info("Sending response");
         try {
             toClient.writeUTF(response.toString());
         } catch (IOException e) {
@@ -128,13 +140,17 @@ public class Server {
     }
 
     private Response saveFile(DataInputStream fromClient, File file, int requestId) {
+        logger.info("Processing PUT request");
         Response response;
         try (BufferedOutputStream bos = new BufferedOutputStream(new FileOutputStream(file))){
             int fileId = fileStorage.nextFileId();
             int fileLength = fromClient.readInt();
+            logger.info("Reading from DataStream: " + fileLength + " bytes");
             byte[] buffer = new byte[fileLength];
             fromClient.readFully(buffer, 0, fileLength);
+            logger.info("Writing to output stream");
             bos.write(buffer, 0, fileLength);
+            logger.info("Writing done for " + file.getName());
             fileStorage.files.put(fileId, file.getName());
             response = new Response(requestId, HTTP_OK, String.valueOf(fileId));
         } catch (IOException e) {
@@ -147,7 +163,7 @@ public class Server {
     private Response sendFile(DataOutputStream toClient, File file, int requestId) {
         Response response;
         try (BufferedInputStream bis = new BufferedInputStream(new FileInputStream(file))){
-            logger.info(String.format("Delivering data: %d bytes", ((int) file.length())));
+            logger.info(String.format("Sending file: %d bytes", ((int) file.length())));
             byte[] buffer = new byte[bis.available()];
             while (bis.read(buffer, 0, bis.available()) > 0) {
                 toClient.write(buffer, 0, bis.available());
@@ -160,7 +176,9 @@ public class Server {
     }
 
     private void shutdown(){
+        logger.info("Shutting down");
         fileStorage.saveStorage();
+        threadPool.shutdown();
         System.exit(0);
     }
 }
