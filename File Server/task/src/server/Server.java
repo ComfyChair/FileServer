@@ -5,7 +5,6 @@ import java.io.*;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.util.Date;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -63,8 +62,11 @@ public class Server {
         fromClient = new DataInputStream(socket.getInputStream());
         toClient = new DataOutputStream(socket.getOutputStream());
         while (running && !socket.isClosed()) {
-            logger.info("Serving waiting for request");
-            String rawRequest = fromClient.readUTF();
+            logger.info("Serving waiting for request in thread " + Thread.currentThread().getName());
+            String rawRequest;
+            do {
+                rawRequest = fromClient.readUTF();
+            } while (rawRequest.isEmpty());
             logger.info("Server received: " + rawRequest);
             try {
                 Request request = Request.parse(rawRequest);
@@ -91,26 +93,61 @@ public class Server {
         logger.info("Put request: " + request);
         String fileName = request.getFileIdentifier().value();
         int fileLength = fromClient.readInt();
-        logger.info("Reading from DataStream: " + fileLength + " bytes");
         byte[] buffer = new byte[fileLength];
         fromClient.readFully(buffer, 0, fileLength);
-        logger.info("Delegating to PutThread with length = " + fileLength);
-        Runnable runnable =new SaveThread(fileName, fileLength, buffer);
-        threadPool.submit(runnable);
+        threadPool.submit(createSaveRunnable(fileName, fileLength, buffer));
     }
 
     public void actionGet(Request request) {
         logger.fine("Delegating get request: " + request);
-        threadPool.submit(new GetThread(request.getFileIdentifier()));
+        threadPool.submit(createGetRunnable(request.getFileIdentifier()));
     }
 
     public void actionDelete(Request request) {
         logger.fine("Delegating delete request: " + request);
-        threadPool.submit(new DeleteThread(request.getFileIdentifier()));
+        threadPool.submit(createDeleteRunnable(request.getFileIdentifier()));
+
     }
 
-    static synchronized void sendResponse(Response response, File attachedFile) {
-        logger.info("Sending response: " + response);
+    private Runnable createGetRunnable(FileIdentifier identifier) {
+        return () -> {
+            Server.logger.fine("Get request in " + Thread.currentThread().getName());
+            File file = Storage.getInstance().getFile(identifier);
+            Server.logger.fine("Found file: " + file.getName());
+            if (!file.exists() || !file.isFile()) {
+                Server.sendResponse(new Response(HTTP_NOT_FOUND, ""), null);
+            } else {
+                Server.sendResponse(new Response(HTTP_OK, ""), file);
+            }
+        };
+    }
+
+    private Runnable createDeleteRunnable(FileIdentifier identifier) {
+        return () -> {
+            Server.logger.info("Delete request in " + Thread.currentThread().getName());
+            boolean wasDeleted = Storage.getInstance().deleteFile(identifier);
+            Response response = wasDeleted ?
+                    new Response(HTTP_OK, "") : new Response(HTTP_NOT_FOUND, "");
+            Server.sendResponse(response, null);
+        };
+    }
+
+    private Runnable createSaveRunnable(String fileName, int length, byte[] contents) {
+        return () -> {
+            Server.logger.info("Put request in " + Thread.currentThread().getName());
+            int fileId = Storage.getInstance().saveFile(fileName, length, contents);
+            Response response;
+            if (fileId > -1) {
+                response = new Response(HTTP_OK, String.valueOf(fileId));
+            } else {
+                response = new Response(HTTP_FORBIDDEN, "");
+            }
+            Server.sendResponse(response, null);
+        };
+    }
+
+    static void sendResponse(Response response, File attachedFile) {
+        logger.info("Sending response in thread " + Thread.currentThread().getName());
         try {
             toClient.writeUTF(response.toString());
             if (attachedFile != null) {

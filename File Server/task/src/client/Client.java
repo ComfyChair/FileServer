@@ -10,7 +10,6 @@ import java.io.*;
 import java.net.InetAddress;
 import java.net.Socket;
 import java.nio.file.Path;
-import java.util.Date;
 import java.util.Scanner;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.*;
@@ -41,6 +40,7 @@ public class Client {
 
     public void connect() {
         try (Socket socket = new Socket(InetAddress.getByName(Server.ADDRESS), Server.PORT)) {
+            logger.info("Socket keep alive = " + socket.getKeepAlive());
             serverIn = new DataInputStream(socket.getInputStream());
             serverOut = new DataOutputStream(socket.getOutputStream());
             String action = "";
@@ -131,7 +131,7 @@ public class Client {
 
     private void processResponse(Request request) {
         try {
-            String rawResponse = null;
+            String rawResponse;
             do {
                 rawResponse = serverIn.readUTF();
             } while (rawResponse.isEmpty());

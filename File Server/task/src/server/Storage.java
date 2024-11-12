@@ -125,7 +125,7 @@ public class Storage implements Serializable {
         nameToId.remove(fileName);
     }
 
-    private synchronized int nextFileId()
+    private int nextFileId()
     {
         return fileIdCounter++;
     }
