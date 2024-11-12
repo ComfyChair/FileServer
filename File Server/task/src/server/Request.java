@@ -1,7 +1,6 @@
 package server;
 
 public final class Request {
-    private int requestId = 0;
     private final RequestType requestType;
     private FileIdentifier fileIdentifier = null;
 
@@ -44,14 +43,6 @@ public final class Request {
     @Override
     public String toString() {
         return fileIdentifier == null ? requestType.name() : String.format("%s %s", requestType.name(), fileIdentifier);
-    }
-
-    public void setId(int id) {
-        this.requestId = id;
-    }
-
-    public int getRequestId() {
-        return requestId;
     }
 
     public RequestType getRequestType() {

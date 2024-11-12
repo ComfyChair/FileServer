@@ -15,14 +15,14 @@ public class Storage implements Serializable {
             "src", "server", "data");
     private static final File mapFile = storagePath.resolve( "storage.idx").toFile();
     private final Map<Integer, String> idToName;
-    private transient final Map<String, Integer> nameToId;
+    private final Map<String, Integer> nameToId;
     private int fileIdCounter;
 
     private Storage(Map<Integer, String> idToName, int fileIdCounter) {
         this.idToName = idToName;
         this.fileIdCounter = fileIdCounter;
         nameToId = new HashMap<>();
-        idToName.forEach((key, value) -> {nameToId.put(value, key);});
+        idToName.forEach((key, value) -> nameToId.put(value, key));
     }
 
     void saveStorage() {
@@ -39,7 +39,7 @@ public class Storage implements Serializable {
         }
     }
 
-    private static Storage loadStorage(){
+    private static Storage initStorage(){
         Storage storage = null;
         if (mapFile.exists()){
             try (ObjectInputStream in = new ObjectInputStream(new BufferedInputStream(new FileInputStream(mapFile)))) {
@@ -55,7 +55,7 @@ public class Storage implements Serializable {
 
     static Storage getInstance(){
         if (instance == null){
-            instance = loadStorage();
+            instance = initStorage();
         }
         return instance;
     }
@@ -76,10 +76,24 @@ public class Storage implements Serializable {
             fileName = fileIdentifier.value();
             id = nameToId.get(fileName);
         }
-        idToName.remove(id);
-        nameToId.remove(fileName);
         File file = storagePath.resolve(fileName).toFile();
-        return file.exists() && file.delete();
+        boolean success;
+        if (file.exists()){
+            logger.info("Deleting file " + file.getName());
+            boolean wasDeleted = file.delete();
+            if (wasDeleted){
+                idToName.remove(id);
+                nameToId.remove(fileName);
+                success = true;
+            } else {
+                logger.warning("Error while deleting file " + file.getAbsolutePath());
+                success = false;
+            }
+        } else {
+            logger.warning("File not found " + file.getAbsolutePath());
+            success = false;
+        }
+        return success;
     }
 
     public int saveFile(DataInputStream in, String name) {

@@ -17,7 +17,7 @@ public class Server {
     public static final String ADDRESS = "127.0.0.1";
     public static final int PORT = 23456;
     private Storage fileStorage;
-    private ExecutorService threadPool;
+    private final ExecutorService threadPool;
     private DataInputStream fromClient;
     private DataOutputStream toClient;
 
@@ -34,19 +34,21 @@ public class Server {
                 try (Socket socket = serverSocket.accept()) {
                     fromClient = new DataInputStream(socket.getInputStream());
                     toClient = new DataOutputStream(socket.getOutputStream());
-                    String rawRequest = fromClient.readUTF();
-                    try {
-                        Request request = Request.parse(rawRequest);
-                        logger.info("Got request: " + request);
-                        switch (request.getRequestType()) {
-                            case GET -> serveGetRequest(request);
-                            case DELETE -> serveDeleteRequest(request);
-                            case PUT -> servePutRequest(request);
-                            case EXIT -> running = false;
+                    while (running && !socket.isClosed()) {
+                        try {
+                            Request request = Request.parse(fromClient.readUTF());
+                            logger.info("Got request: " + request);
+                            switch (request.getRequestType()) {
+                                case GET -> actionGet(request);
+                                case DELETE -> actionDelete(request);
+                                case PUT -> actionPut(request);
+                                case EXIT -> running = false;
+                            }
+                        } catch (IllegalArgumentException e) {
+                            logger.severe("Invalid request!");
                         }
-                    } catch (IllegalArgumentException e) {
-                        logger.severe("Invalid request: " + rawRequest);
                     }
+                    logger.info("Socket disconnected!");
                 }
                 catch (IOException e) {
                     System.err.println("Client connection was closed");
@@ -66,55 +68,53 @@ public class Server {
         logger.info("Storage initialized: " + fileStorage.showIndex());
     }
 
-    public void servePutRequest(Request request) {
+    public void actionPut(Request request) {
         logger.info("Put request: " + request);
         String fileName = request.getFileIdentifier().value();
         int fileId = fileStorage.saveFile(fromClient, fileName);
         logger.info("File saved with id: " + fileId);
-        int requestId = request.getRequestId();
         Response response;
         if (fileId > -1) {
-            response = new Response(requestId, HTTP_OK, String.valueOf(fileId));
+            response = new Response(HTTP_OK, String.valueOf(fileId));
         } else {
-            response = new Response(requestId, HTTP_FORBIDDEN, "");
+            response = new Response(HTTP_FORBIDDEN, "");
         }
         sendResponse(response, null);
     }
 
-    public void serveGetRequest(Request request) {
-        logger.info("Processing GET request: ");
+    public void actionGet(Request request) {
         File file = fileStorage.getFile(request.getFileIdentifier());
-        int requestId = request.getRequestId();
+        logger.info("Found file: " + file.getName());
         if (!file.exists() || !file.isFile()) {
-            sendResponse(new Response(requestId, HTTP_NOT_FOUND, ""), null);
+            sendResponse(new Response(HTTP_NOT_FOUND, ""), null);
         } else {
-            sendResponse(new Response(requestId, HTTP_OK, ""), file);
+            sendResponse(new Response(HTTP_OK, ""), file);
         }
     }
 
-    public void serveDeleteRequest(Request request) {
-        logger.info("Processing DELETE request: ");
-        int requestId = request.getRequestId();
+    public void actionDelete(Request request) {
+        logger.info("Delete request for " + request.getFileIdentifier().toString());
         boolean wasDeleted = fileStorage.deleteFile(request.getFileIdentifier());
+        logger.info("DELETE request successful: " + wasDeleted);
         Response response = wasDeleted ?
-                new Response(requestId, HTTP_OK, "") : new Response(requestId, HTTP_NOT_FOUND, "");
+                new Response(HTTP_OK, "") : new Response(HTTP_NOT_FOUND, "");
         sendResponse(response, null);
     }
 
     private synchronized void sendResponse(Response response, File attachedFile) {
-        logger.info("Sending response");
         try {
             toClient.writeUTF(response.toString());
             if (attachedFile != null) {
                 try (BufferedInputStream bis = new BufferedInputStream(new FileInputStream(attachedFile))){
                     int fileLength = (int) attachedFile.length();
-                    logger.info(String.format("Sending file: %d bytes", fileLength));
                     toClient.writeInt(fileLength);
                     bis.transferTo(toClient);
+                    logger.info(String.format("File sent: %d bytes", fileLength));
                 } catch (IOException e) {
                     logger.severe("Server couldn't send file");
                 }
             }
+            logger.info("Response sent");
         } catch (IOException e) {
             logger.warning("Could not send response for request(" + response +")");
         }
