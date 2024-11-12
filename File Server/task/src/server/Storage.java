@@ -2,27 +2,27 @@ package server;
 
 import java.io.*;
 import java.nio.file.Path;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.logging.Logger;
 
 
 public class Storage implements Serializable {
     @Serial
-    private static final long serialVersionUID = 1L;
+    private static final long serialVersionUID = 2L;
     private static Storage instance = null;
     private static final Path storagePath = Path.of(System.getProperty("user.dir"),
             "src", "server", "data");
     private static final File mapFile = storagePath.resolve( "storage.idx").toFile();
-    private final Map<Integer, String> idToName;
-    private final Map<String, Integer> nameToId;
+    private final ConcurrentMap<Integer, String> idToName;
+    private final ConcurrentMap<String, Integer> nameToId;
     private int fileIdCounter;
-    private static final Logger logger = Logger.getLogger(Storage.class.getName());;
+    private static final Logger logger = Logger.getLogger(Storage.class.getName());
 
-    private Storage(Map<Integer, String> idToName, int fileIdCounter) {
+    private Storage(ConcurrentMap<Integer, String> idToName, int fileIdCounter) {
         this.idToName = idToName;
         this.fileIdCounter = fileIdCounter;
-        nameToId = new HashMap<>();
+        nameToId = new ConcurrentHashMap<>();
         idToName.forEach((key, value) -> nameToId.put(value, key));
     }
 
@@ -51,7 +51,7 @@ public class Storage implements Serializable {
                 logger.warning("Error while deserializing storage map");
             }
         }
-        return storage == null ? new Storage(new HashMap<>(), 0) : storage;
+        return storage == null ? new Storage(new ConcurrentHashMap<>(), 0) : storage;
     }
 
     static Storage getInstance(){

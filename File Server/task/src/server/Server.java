@@ -110,6 +110,7 @@ public class Server {
     }
 
     static synchronized void sendResponse(Response response, File attachedFile) {
+        logger.info("Sending response: " + response);
         try {
             toClient.writeUTF(response.toString());
             if (attachedFile != null) {
