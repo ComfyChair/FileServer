@@ -1,13 +1,22 @@
 package server;
 
 
+import java.io.File;
+
 public final class Response {
     private final int code;
     private final String info;
+    private File file = null;
 
     public Response(int code, String info) {
         this.code = code;
         this.info = info;
+    }
+
+    public Response(int code, String info, File file) {
+        this.code = code;
+        this.info = info;
+        this.file = file;
     }
 
     public static Response parse(String responseString){
@@ -25,8 +34,13 @@ public final class Response {
         return info;
     }
 
+    public File getFile() {
+        return file;
+    }
+
     @Override
     public String toString() {
-        return String.format("%d %s", code, info);
+        return file == null ? String.format("%d %s", code, info)
+                : String.format("%d %s %s", code, info, file.getName());
     }
 }

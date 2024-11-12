@@ -4,24 +4,27 @@ import java.io.*;
 import java.nio.file.Path;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Logger;
 
 
 public class Storage implements Serializable {
     @Serial
     private static final long serialVersionUID = 2L;
-    private static Storage instance = null;
+    private static final Logger logger = Logger.getLogger(Storage.class.getName());
     private static final Path storagePath = Path.of(System.getProperty("user.dir"),
             "src", "server", "data");
     private static final File mapFile = storagePath.resolve( "storage.idx").toFile();
+    private static Storage instance = null;
+
     private final ConcurrentMap<Integer, String> idToName;
     private final ConcurrentMap<String, Integer> nameToId;
-    private int fileIdCounter;
-    private static final Logger logger = Logger.getLogger(Storage.class.getName());
+    private AtomicInteger fileIdCounter;
+
 
     private Storage(ConcurrentMap<Integer, String> idToName, int fileIdCounter) {
         this.idToName = idToName;
-        this.fileIdCounter = fileIdCounter;
+        this.fileIdCounter = new AtomicInteger(fileIdCounter);
         nameToId = new ConcurrentHashMap<>();
         idToName.forEach((key, value) -> nameToId.put(value, key));
     }
@@ -32,9 +35,9 @@ public class Storage implements Serializable {
                 mapFile.getParentFile().mkdirs();
                 mapFile.createNewFile();
             }
-            ObjectOutputStream oos = new ObjectOutputStream(new BufferedOutputStream(new FileOutputStream(mapFile)));
-            oos.writeObject(this);
-            oos.close();
+            try(ObjectOutputStream oos = new ObjectOutputStream(new BufferedOutputStream(new FileOutputStream(mapFile)))){
+                oos.writeObject(this);
+            }
         } catch (IOException e) {
             System.err.println("IO exception while writing index file: " + e.getMessage());
         }
@@ -113,7 +116,7 @@ public class Storage implements Serializable {
     }
 
     private int addToIndex(String name) {
-        int fileId = nextFileId();
+        int fileId = fileIdCounter.getAndIncrement();
         idToName.put(fileId, name);
         nameToId.put(name, fileId);
         logger.info("Storage updated: " + showIndex());
@@ -123,11 +126,7 @@ public class Storage implements Serializable {
     private void removeFromIndex(int id, String fileName) {
         idToName.remove(id);
         nameToId.remove(fileName);
-    }
-
-    private int nextFileId()
-    {
-        return fileIdCounter++;
+        logger.info("Storage updated: " + showIndex());
     }
 
     public String showIndex() {

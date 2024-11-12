@@ -40,27 +40,27 @@ public class Client {
 
     public void connect() {
         try (Socket socket = new Socket(InetAddress.getByName(Server.ADDRESS), Server.PORT)) {
-            logger.info("Socket keep alive = " + socket.getKeepAlive());
+            socket.setKeepAlive(true);
             serverIn = new DataInputStream(socket.getInputStream());
             serverOut = new DataOutputStream(socket.getOutputStream());
             String action = "";
             System.out.println("Enter action (1 - get a file, 2 - save a file, 3 - delete a file): ");
-            while (!action.equals("exit") && !socket.isClosed()) {
-                action = scanner.nextLine();
-                switch (action) {
-                    case "1" -> sendGetRequest();
-                    case "2" -> sendPutRequest();
-                    case "3" -> sendDeleteRequest();
-                    case "exit" -> serverOut.writeUTF(new Request(RequestType.EXIT).toString());
+            action = scanner.nextLine();
+            switch (action) {
+                case "1" -> sendGetRequest();
+                case "2" -> sendPutRequest();
+                case "3" -> sendDeleteRequest();
+                case "exit" -> {
+                    serverOut.writeUTF(new Request(RequestType.EXIT).toString());
+                    TimeUnit.MILLISECONDS.sleep(300);
                 }
             }
-            TimeUnit.MILLISECONDS.sleep(500);
         } catch (IOException | InterruptedException e) {
             System.err.println("I/O Exception: " + e.getMessage());
             e.printStackTrace();
             System.exit(1);
         }
-        logger.info("Exit");
+        logger.info("Exit: Client");
         System.exit(0);
     }
 
@@ -116,7 +116,6 @@ public class Client {
                 serverOut.writeInt(fileLength);
                 logger.info("Sending file length: " + file.length());
                 try (BufferedInputStream bis = new BufferedInputStream(new FileInputStream(file))) {
-                    logger.info(String.format("Sending data: %d bytes", fileLength));
                     bis.transferTo(serverOut);
                 } catch (IOException e) {
                     logger.warning("Error while writing data to output stream");
@@ -137,12 +136,11 @@ public class Client {
             } while (rawResponse.isEmpty());
             Response response = Response.parse(rawResponse);
             logger.info("Received response: " + response);
-            logger.info("   belongs to requestType: " + request.getRequestType());
             switch (request.getRequestType()){
                 case GET -> {
                     switch (response.getCode()){
                         case HTTP_OK -> saveFile();
-                        case HTTP_NOT_FOUND -> System.out.printf("%s  this file is not found!%n", EXPLAIN_RESPONSE);
+                        case HTTP_NOT_FOUND -> System.out.printf("%s this file is not found!%n", EXPLAIN_RESPONSE);
                         default -> System.out.println("Invalid response");
                     }
                 }
@@ -156,7 +154,7 @@ public class Client {
                 case DELETE -> {
                     switch (response.getCode()) {
                         case HTTP_OK -> System.out.printf("%s this file was deleted successfully!%n", EXPLAIN_RESPONSE);
-                        case HTTP_NOT_FOUND -> System.out.printf("%s  this file is not found!%n", EXPLAIN_RESPONSE);
+                        case HTTP_NOT_FOUND -> System.out.printf("%s this file is not found!%n", EXPLAIN_RESPONSE);
                         default -> System.out.println("Invalid response");
                     }
                 }
