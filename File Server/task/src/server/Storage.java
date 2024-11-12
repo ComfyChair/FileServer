@@ -4,8 +4,8 @@ import java.io.*;
 import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.logging.Logger;
 
-import static server.Main.logger;
 
 public class Storage implements Serializable {
     @Serial
@@ -17,6 +17,7 @@ public class Storage implements Serializable {
     private final Map<Integer, String> idToName;
     private final Map<String, Integer> nameToId;
     private int fileIdCounter;
+    private static final Logger logger = Logger.getLogger(Storage.class.getName());;
 
     private Storage(Map<Integer, String> idToName, int fileIdCounter) {
         this.idToName = idToName;
@@ -71,50 +72,57 @@ public class Storage implements Serializable {
         String fileName;
         if (fileIdentifier.type() == FileIdentifier.Type.BY_ID) {
             id = Integer.parseInt(fileIdentifier.value());
+            if (!idToName.containsKey(id)) { return false; }
             fileName = idToName.get(id);
         } else {
             fileName = fileIdentifier.value();
+            if (!nameToId.containsKey(fileName)) { return false; }
             id = nameToId.get(fileName);
         }
         File file = storagePath.resolve(fileName).toFile();
         boolean success;
         if (file.exists()){
-            logger.info("Deleting file " + file.getName());
+            logger.fine("Deleting file " + file.getName());
             boolean wasDeleted = file.delete();
             if (wasDeleted){
-                idToName.remove(id);
-                nameToId.remove(fileName);
+                removeFromIndex(id, fileName);
                 success = true;
             } else {
                 logger.warning("Error while deleting file " + file.getAbsolutePath());
                 success = false;
             }
         } else {
-            logger.warning("File not found " + file.getAbsolutePath());
+            logger.info("File not found " + file.getAbsolutePath());
             success = false;
         }
         return success;
     }
 
-    public int saveFile(DataInputStream in, String name) {
-        int fileId = nextFileId();
-        idToName.put(fileId, name);
-        nameToId.put(name, fileId);
-        logger.info("Storage updated: " + showIndex());
+    public int saveFile(String name, int fileLength, byte[] content) {
+        if (nameToId.containsKey(name)) { return -1; }
         File file = storagePath.resolve(name).toFile();
         try (BufferedOutputStream bos = new BufferedOutputStream(new FileOutputStream(file))){
-            int fileLength = in.readInt();
-            logger.info("Reading from DataStream: " + fileLength + " bytes");
-            byte[] buffer = new byte[fileLength];
-            in.readFully(buffer, 0, fileLength);
-            logger.info("Writing to output stream");
-            bos.write(buffer, 0, fileLength);
+            logger.fine("Writing to output stream");
+            bos.write(content, 0, fileLength);
             logger.info("Writing done for " + file.getName());
-            return fileId;
+            return addToIndex(name);
         } catch (IOException e) {
             logger.warning("IO error: " + e.getMessage());
             return -1;
         }
+    }
+
+    private int addToIndex(String name) {
+        int fileId = nextFileId();
+        idToName.put(fileId, name);
+        nameToId.put(name, fileId);
+        logger.info("Storage updated: " + showIndex());
+        return fileId;
+    }
+
+    private void removeFromIndex(int id, String fileName) {
+        idToName.remove(id);
+        nameToId.remove(fileName);
     }
 
     private synchronized int nextFileId()

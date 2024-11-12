@@ -5,49 +5,45 @@ import java.io.*;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.util.Date;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.logging.*;
 
 import static java.net.HttpURLConnection.*;
-import static server.Main.logger;
 
 
 public class Server {
     public static final String ADDRESS = "127.0.0.1";
     public static final int PORT = 23456;
-    private Storage fileStorage;
+    private static Storage fileStorage;
     private final ExecutorService threadPool;
     private DataInputStream fromClient;
-    private DataOutputStream toClient;
+    private static DataOutputStream toClient;
+    static final Logger logger = Logger.getLogger(Server.class.getName());
+    static {
+        logger.setLevel(Level.ALL);
+    }
+
+    public static void main(String[] args) {
+        Server server = new Server();
+        server.start();
+    }
 
     public Server() {
-        initStorage();
         threadPool = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
     }
 
     void start() {
+        initStorage();
         System.out.println("Server started!");
         try (ServerSocket serverSocket = new ServerSocket(PORT, 50, InetAddress.getByName(ADDRESS))) {
-            boolean running = true;
-            while (running) {
+            boolean keepRunning = true;
+            while (keepRunning) {
                 try (Socket socket = serverSocket.accept()) {
-                    fromClient = new DataInputStream(socket.getInputStream());
-                    toClient = new DataOutputStream(socket.getOutputStream());
-                    while (running && !socket.isClosed()) {
-                        try {
-                            Request request = Request.parse(fromClient.readUTF());
-                            logger.info("Got request: " + request);
-                            switch (request.getRequestType()) {
-                                case GET -> actionGet(request);
-                                case DELETE -> actionDelete(request);
-                                case PUT -> actionPut(request);
-                                case EXIT -> running = false;
-                            }
-                        } catch (IllegalArgumentException e) {
-                            logger.severe("Invalid request!");
-                        }
-                    }
+                    logger.info("Connection accepted from server");
+                    keepRunning = connected(socket, keepRunning);
                     logger.info("Socket disconnected!");
                 }
                 catch (IOException e) {
@@ -63,45 +59,57 @@ public class Server {
         }
     }
 
+    private boolean connected(Socket socket, boolean running) throws IOException {
+        fromClient = new DataInputStream(socket.getInputStream());
+        toClient = new DataOutputStream(socket.getOutputStream());
+        while (running && !socket.isClosed()) {
+            logger.info("Serving waiting for request");
+            String rawRequest = fromClient.readUTF();
+            logger.info("Server received: " + rawRequest);
+            try {
+                Request request = Request.parse(rawRequest);
+                logger.info("Server received request: " + request + ", type " + request.getRequestType());
+                switch (request.getRequestType()) {
+                    case GET -> actionGet(request);
+                    case DELETE -> actionDelete(request);
+                    case PUT -> actionPut(request);
+                    case EXIT -> running = false;
+                }
+            } catch (IllegalArgumentException e) {
+                logger.info("Invalid request: " + rawRequest);
+            }
+        }
+        return running;
+    }
+
     private void initStorage() {
         fileStorage = Storage.getInstance();
         logger.info("Storage initialized: " + fileStorage.showIndex());
     }
 
-    public void actionPut(Request request) {
+    public void actionPut(Request request) throws IOException {
         logger.info("Put request: " + request);
         String fileName = request.getFileIdentifier().value();
-        int fileId = fileStorage.saveFile(fromClient, fileName);
-        logger.info("File saved with id: " + fileId);
-        Response response;
-        if (fileId > -1) {
-            response = new Response(HTTP_OK, String.valueOf(fileId));
-        } else {
-            response = new Response(HTTP_FORBIDDEN, "");
-        }
-        sendResponse(response, null);
+        int fileLength = fromClient.readInt();
+        logger.info("Reading from DataStream: " + fileLength + " bytes");
+        byte[] buffer = new byte[fileLength];
+        fromClient.readFully(buffer, 0, fileLength);
+        logger.info("Delegating to PutThread with length = " + fileLength);
+        Runnable runnable =new SaveThread(fileName, fileLength, buffer);
+        threadPool.submit(runnable);
     }
 
     public void actionGet(Request request) {
-        File file = fileStorage.getFile(request.getFileIdentifier());
-        logger.info("Found file: " + file.getName());
-        if (!file.exists() || !file.isFile()) {
-            sendResponse(new Response(HTTP_NOT_FOUND, ""), null);
-        } else {
-            sendResponse(new Response(HTTP_OK, ""), file);
-        }
+        logger.fine("Delegating get request: " + request);
+        threadPool.submit(new GetThread(request.getFileIdentifier()));
     }
 
     public void actionDelete(Request request) {
-        logger.info("Delete request for " + request.getFileIdentifier().toString());
-        boolean wasDeleted = fileStorage.deleteFile(request.getFileIdentifier());
-        logger.info("DELETE request successful: " + wasDeleted);
-        Response response = wasDeleted ?
-                new Response(HTTP_OK, "") : new Response(HTTP_NOT_FOUND, "");
-        sendResponse(response, null);
+        logger.fine("Delegating delete request: " + request);
+        threadPool.submit(new DeleteThread(request.getFileIdentifier()));
     }
 
-    private synchronized void sendResponse(Response response, File attachedFile) {
+    static synchronized void sendResponse(Response response, File attachedFile) {
         try {
             toClient.writeUTF(response.toString());
             if (attachedFile != null) {
@@ -109,7 +117,7 @@ public class Server {
                     int fileLength = (int) attachedFile.length();
                     toClient.writeInt(fileLength);
                     bis.transferTo(toClient);
-                    logger.info(String.format("File sent: %d bytes", fileLength));
+                    logger.fine(String.format("File sent: %d bytes", fileLength));
                 } catch (IOException e) {
                     logger.severe("Server couldn't send file");
                 }
@@ -121,7 +129,7 @@ public class Server {
     }
 
     private void shutdown(){
-        logger.info("Shutting down");
+        logger.info("Server shutting down");
         fileStorage.saveStorage();
         threadPool.shutdown();
         try {
@@ -135,6 +143,7 @@ public class Server {
             threadPool.shutdownNow();
             Thread.currentThread().interrupt();
         }
+        logger.info("Server shut down.");
         System.exit(0);
     }
 }

@@ -10,19 +10,27 @@ import java.io.*;
 import java.net.InetAddress;
 import java.net.Socket;
 import java.nio.file.Path;
+import java.util.Date;
 import java.util.Scanner;
-import java.util.logging.Logger;
+import java.util.concurrent.TimeUnit;
+import java.util.logging.*;
 
 import static java.net.HttpURLConnection.*;
 
 public class Client {
-    static Logger logger = Logger.getLogger(Client.class.getName());
     private static final String EXPLAIN_RESPONSE = "The response says that";
     private static final Path dataPath = Path.of(System.getProperty("user.dir"),
             "src", "client", "data");
     private final Scanner scanner;
     private DataInputStream serverIn;
     private DataOutputStream serverOut;
+    private static final Logger logger = Logger.getLogger(Client.class.getName());
+
+    public static void main(String[] args) throws InterruptedException {
+        TimeUnit.MILLISECONDS.sleep(500);
+        Client client = new Client();
+        client.connect();
+    }
 
     public Client() {
         if (!dataPath.toFile().exists()) {
@@ -36,8 +44,8 @@ public class Client {
             serverIn = new DataInputStream(socket.getInputStream());
             serverOut = new DataOutputStream(socket.getOutputStream());
             String action = "";
+            System.out.println("Enter action (1 - get a file, 2 - save a file, 3 - delete a file): ");
             while (!action.equals("exit") && !socket.isClosed()) {
-                System.out.println("Enter action (1 - get a file, 2 - save a file, 3 - delete a file): ");
                 action = scanner.nextLine();
                 switch (action) {
                     case "1" -> sendGetRequest();
@@ -46,7 +54,8 @@ public class Client {
                     case "exit" -> serverOut.writeUTF(new Request(RequestType.EXIT).toString());
                 }
             }
-        } catch (IOException e) {
+            TimeUnit.MILLISECONDS.sleep(500);
+        } catch (IOException | InterruptedException e) {
             System.err.println("I/O Exception: " + e.getMessage());
             e.printStackTrace();
             System.exit(1);
@@ -64,6 +73,7 @@ public class Client {
         } else {
             System.out.println("Enter identifier of the file to be saved on server: ");
             String destName = scanner.nextLine();
+            destName = destName.isEmpty() ? srcName : destName;
             Request request = new Request(RequestType.PUT, new FileIdentifier(FileIdentifier.Type.BY_NAME, destName));
             sendRequest(request, file);
         }
@@ -138,7 +148,7 @@ public class Client {
                 }
                 case PUT -> {
                     switch (response.getCode()){
-                        case HTTP_OK -> System.out.printf("%s file is saved! ID = %s%n", EXPLAIN_RESPONSE, response.getInfo());
+                        case HTTP_OK -> System.out.printf("Response says that file is saved! ID = %s%n", response.getInfo());
                         case HTTP_FORBIDDEN -> System.out.printf("%s file is not saved!%n", EXPLAIN_RESPONSE);
                         default -> System.out.println("Invalid response");
                     }
