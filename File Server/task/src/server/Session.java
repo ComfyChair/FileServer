@@ -9,6 +9,7 @@ import java.util.logging.Logger;
 
 import static java.net.HttpURLConnection.*;
 
+/** Class for managing a single Client-Server session */
 public class Session {
     static final Logger logger = Logger.getLogger(Session.class.getName());
     private final ExecutorService threadPool;
@@ -18,6 +19,9 @@ public class Session {
     private boolean exitServer;
     private final Set<Future<Response>> pendingResponses = new HashSet<>();
 
+    /** Session constructor
+     * @param socket The socket by which the client is connected
+     * @throws IOException if the client has already disconnected and data streams are therefore closed */
     public Session(Socket socket) throws IOException {
         this.socket = socket;
         threadPool = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
@@ -26,8 +30,10 @@ public class Session {
         exitServer = false;
     }
 
-    public boolean start() {
-        threadPool.submit(this::futureCollector);
+    /** Starts response handling thread, parses client requests and handles client disconnects
+     * @return true if client requested server should be shut down, false otherwise */
+    public boolean startLifecycle() {
+        threadPool.submit(this::responseHandler);
         String rawRequest;
         while (!exitServer && !socket.isClosed()) {
             try {
@@ -58,6 +64,8 @@ public class Session {
         return exitServer;
     }
 
+    /** PUT request action
+     * reads file from stream and initiates saving to Storage in a separate thread */
     public void actionPut(Request request) throws IOException {
         String fileName = request.getFileIdentifier().value();
         int fileLength = fromClient.readInt();
@@ -75,6 +83,8 @@ public class Session {
         pendingResponses.add(futureResponse);
     }
 
+    /** GET request action
+     * initiates file query from Storage in a separate thread */
     public void actionGet(Request request) {
         Future<Response> futureResponse = threadPool.submit(() -> {
             Server.logger.fine("Get request in " + Thread.currentThread().getName());
@@ -89,6 +99,8 @@ public class Session {
         pendingResponses.add(futureResponse);
     }
 
+    /** DELETE request action
+     * initiates deletion from Storage in a separate thread */
     public void actionDelete(Request request) {
         Future<Response> futureResponse = threadPool.submit(() -> {
             Server.logger.fine("Delete request in " + Thread.currentThread().getName());
@@ -98,7 +110,9 @@ public class Session {
         pendingResponses.add(futureResponse);
     }
 
-    private void futureCollector() {
+    /** Manages asynchronous response generation
+     *  by checking Future Responses for completion and calling sendResponse with them */
+    private void responseHandler() {
         while (!threadPool.isShutdown()) {
             try {
                 for (Future<Response> future : pendingResponses) {
@@ -115,6 +129,8 @@ public class Session {
         }
     }
 
+    /** Sends a response to the client, including a requested file if applicable
+     * @param response the response that should be returned */
     private void sendResponse(Response response) {
         logger.fine("Sending response in thread " + Thread.currentThread().getName());
         synchronized (threadPool) {
@@ -137,6 +153,7 @@ public class Session {
         }
     }
 
+    /** Tries to terminate any running threads at the end of the session */
     private void terminateThreads() {
         logger.info("Shutting down thread pool");
         threadPool.shutdown();

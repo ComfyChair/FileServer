@@ -30,7 +30,7 @@ public class Server {
             while (!exitServer) {
                 try (Socket socket = serverSocket.accept()) {
                     Session session = new Session(socket);
-                    exitServer = session.start();
+                    exitServer = session.startLifecycle();
                     logger.info("Session disconnected!");
                 }
                 catch (IOException e) {

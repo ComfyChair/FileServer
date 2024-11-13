@@ -3,11 +3,14 @@ package server;
 import java.io.*;
 import java.nio.file.Path;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Logger;
 
 
+/** Storage Singleton class
+ * Manages saving and deleting file from "cwd/src/server/data", as well as queries for files by id and name.
+ * Index management is delegated to a FileIndex,
+ * which can be saved as "cwd/src/server/data/storage.idx".
+ * If previously saved, the FileIndex is restored when the Singleton is created. */
 public class Storage {
     private static final Logger logger = Logger.getLogger(Storage.class.getName());
     private static final Path storagePath = Path.of(System.getProperty("user.dir"),
@@ -17,10 +20,14 @@ public class Storage {
 
     private final FileIndex index;
 
+    /** private constructor, only used if instance is null */
     private Storage(FileIndex index) {
         this.index = index;
     }
 
+    /** Provides access to the Storage Singleton instance
+     * @return The one and only instance of Storage
+     */
     static Storage getInstance(){
         if (instance == null){
             instance = new Storage(initIndex());
@@ -28,6 +35,9 @@ public class Storage {
         return instance;
     }
 
+    /** Initializes the FileIndex either from a saved index or by creating an empty index
+     * @return the initialized FileIndex
+     */
     private static FileIndex initIndex(){
         FileIndex index = null;
         if (indexFile.exists()){
@@ -42,7 +52,10 @@ public class Storage {
         return index == null ? new FileIndex(new ConcurrentHashMap<>(), 0) : index;
     }
 
-    /** Returns File if file is in index and actually present, null otherwise */
+    /** Returns the queried file if it is present in the index and null otherwise
+     * @param fileIdentifier the identifier of the file
+     * @return the file if it exists or null otherwise
+     * */
     public File getFile(FileIdentifier fileIdentifier) {
         String fileName = index.getName(fileIdentifier);
         if (fileName != null){
@@ -54,6 +67,8 @@ public class Storage {
         return null;
     }
 
+    /** Deletes file if file is found in index and exists
+     * @return true if successful and false otherwise */
     public boolean deleteFile(FileIdentifier fileIdentifier) {
         boolean success;
         String fileName = index.getName(fileIdentifier);
@@ -75,6 +90,8 @@ public class Storage {
         return success;
     }
 
+    /** Saves file if file of the same name is not yet in index
+     * @return assigned file index if successful and -1 otherwise */
     public int saveFile(String name, int fileLength, byte[] content) {
         if (index.contains(name)) { return -1; }
         File file = storagePath.resolve(name).toFile();
@@ -89,21 +106,8 @@ public class Storage {
         }
     }
 
-    public String showIndex() {
-        return index.idToName.toString();
-    }
-
-    void saveIndex() {
-        boolean isFileCreated = verifyOrCreateIndexFile();
-        if (isFileCreated) {
-            try(ObjectOutputStream oos = new ObjectOutputStream(new BufferedOutputStream(new FileOutputStream(indexFile)))){
-                oos.writeObject(index);
-            } catch (IOException e) {
-                logger.warning("Could not save index to file.");
-            }
-        }
-    }
-
+    /** Checks if index file exists and tries to create it if not
+     * @return true if file is present and false otherwise */
     private boolean verifyOrCreateIndexFile() {
         boolean fileExists = indexFile.exists();
         if (!fileExists){
@@ -122,45 +126,20 @@ public class Storage {
         return fileExists;
     }
 
-    private static class FileIndex implements Serializable {
-        @Serial
-        private static final long serialVersionUID = 1L;
-        private final ConcurrentMap<Integer, String> idToName;
-        private final ConcurrentMap<String, Integer> nameToId;
-        private final AtomicInteger fileIdCounter;
-
-        FileIndex(ConcurrentMap<Integer, String> idToName, int fileIdCounter) {
-            this.idToName = idToName;
-            this.fileIdCounter = new AtomicInteger(fileIdCounter);
-            nameToId = new ConcurrentHashMap<>();
-            idToName.forEach((key, value) -> nameToId.put(value, key));
-        }
-
-        public int add(String name) {
-            int id = fileIdCounter.getAndIncrement();
-            nameToId.put(name, id);
-            idToName.put(id, name);
-            return id;
-        }
-
-        public boolean contains(String name) {
-            return nameToId.containsKey(name);
-        }
-
-        String getName(FileIdentifier fileIdentifier) {
-            if (fileIdentifier.type() == FileIdentifier.Type.BY_NAME) {
-                String name = fileIdentifier.value();
-                return nameToId.containsKey(name) ? name : null;
-            } else {
-                int id = Integer.parseInt(fileIdentifier.value());
-                return idToName.getOrDefault(id, null);
+    /** Saves index to file; call when exiting */
+    void saveIndex() {
+        boolean isFileCreated = verifyOrCreateIndexFile();
+        if (isFileCreated) {
+            try(ObjectOutputStream oos = new ObjectOutputStream(new BufferedOutputStream(new FileOutputStream(indexFile)))){
+                oos.writeObject(index);
+            } catch (IOException e) {
+                logger.warning("Could not save index to file.");
             }
         }
+    }
 
-        public void remove(String fileName) {
-            int id = nameToId.get(fileName);
-            nameToId.remove(fileName);
-            idToName.remove(id);
-        }
+    /** Shows content of index for logging purposes */
+    public String showIndex() {
+        return index.showContent();
     }
 }
