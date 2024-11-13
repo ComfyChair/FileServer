@@ -1,0 +1,16 @@
+# course config files
+*.yaml
+
+# gradle
+.gradle/
+build
+
+
+# idea config
+.idea
+
+# old stages
+/File Server/*
+!/File Server/task/
+/File Server/task/*
+!/File Server/task/src

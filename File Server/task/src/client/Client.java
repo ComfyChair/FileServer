@@ -52,16 +52,15 @@ public class Client {
                 case "3" -> sendDeleteRequest();
                 case "exit" -> {
                     serverOut.writeUTF(new Request(RequestType.EXIT).toString());
-                    TimeUnit.MILLISECONDS.sleep(300);
+                    if (serverIn.read() == -1) { exitClient(); }
                 }
             }
-        } catch (IOException | InterruptedException e) {
-            System.err.println("I/O Exception: " + e.getMessage());
-            e.printStackTrace();
-            System.exit(1);
+        } catch (IOException e) {
+            logger.info("Lost connection to server.");
+            exitClient();
         }
-        logger.info("Exit: Client");
-        System.exit(0);
+        logger.info("Socket closed.");
+        exitClient();
     }
 
     private void sendPutRequest() {
@@ -161,8 +160,8 @@ public class Client {
                 default -> System.out.println("Unexpected response for request type " + request.getRequestType());
             }
         } catch (IOException e) {
-            logger.severe("I/O Exception while waiting for response: " + e.getMessage());
-            e.printStackTrace();
+            logger.info("Lost connection to server: " + e.getCause().getMessage());
+            exitClient();
         }
     }
 
@@ -182,6 +181,11 @@ public class Client {
             logger.warning("IO error: " + e.getMessage());
         }
         System.out.println("File saved on the hard drive!");
+    }
+
+    private static void exitClient() {
+        logger.info("Exit: Client");
+        System.exit(0);
     }
 }
 

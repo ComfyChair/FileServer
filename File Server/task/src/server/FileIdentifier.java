@@ -8,4 +8,3 @@ public record FileIdentifier(Type type, String value) {
         return String.format("%s %s", type.name(), value);
     }
 }
-

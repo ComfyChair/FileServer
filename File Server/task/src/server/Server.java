@@ -36,7 +36,6 @@ public class Server {
                 catch (IOException e) {
                     logger.info("Client connection was closed");
                 }
-                //TODO: Prevent server from shutting down when client disconnects without exit command
             }
         } catch (IOException e) {
             logger.severe("Server couldn't listen on port " + PORT);
@@ -51,9 +50,9 @@ public class Server {
     }
 
     private void shutdown(){
-        logger.info("Server shutting down");
-        fileStorage.saveStorage();
-        logger.info("Server shut down.");
+        logger.fine("Server shutting down, saving index");
+        fileStorage.saveIndex();
+        logger.info("Storage index saved, server exiting.");
         System.exit(0);
     }
 }

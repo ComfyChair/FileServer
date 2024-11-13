@@ -28,26 +28,31 @@ public class Session {
 
     public boolean start() {
         threadPool.submit(this::futureCollector);
-
-        logger.info("Session waiting for request in thread " + Thread.currentThread().getName());
         String rawRequest;
-        try {
-            rawRequest = fromClient.readUTF();
-            logger.info("Received request: " + rawRequest);
+        while (!exitServer && !socket.isClosed()) {
             try {
-                Request request = Request.parse(rawRequest);
-                switch (request.getRequestType()) {
-                    case GET -> actionGet(request);
-                    case DELETE -> actionDelete(request);
-                    case PUT -> actionPut(request);
-                    case EXIT -> exitServer = true;
+                logger.fine("Session waiting for request in thread " + Thread.currentThread().getName());
+                rawRequest = fromClient.readUTF();
+                logger.info("Received request: " + rawRequest);
+                try {
+                    Request request = Request.parse(rawRequest);
+                    switch (request.getRequestType()) {
+                        case GET -> actionGet(request);
+                        case DELETE -> actionDelete(request);
+                        case PUT -> actionPut(request);
+                        case EXIT -> exitServer = true;
+                    }
+                } catch (IllegalArgumentException e) {
+                    logger.info("Invalid request: " + rawRequest);
                 }
-            } catch (IllegalArgumentException e) {
-                logger.info("Invalid request: " + rawRequest);
+                if (!exitServer && fromClient.read() == -1) {
+                    logger.info("Client disconnected. Closing socket...");
+                    socket.close();
+                }
+            } catch (IOException e) {
+                logger.info("Lost connection to client.");
+                return exitServer;
             }
-        } catch (IOException e) {
-            logger.info("Lost connection to client: " + e.getCause());
-            return exitServer;
         }
         terminateThreads();
         return exitServer;
@@ -59,7 +64,7 @@ public class Session {
         byte[] contents = new byte[fileLength];
         fromClient.readFully(contents, 0, fileLength);
         Future<Response> futureResponse = threadPool.submit(() -> {
-            Server.logger.info("Put request in " + Thread.currentThread().getName());
+            Server.logger.fine("Put request in " + Thread.currentThread().getName());
             int fileId = Storage.getInstance().saveFile(fileName, fileLength, contents);
             if (fileId > -1) {
                 return new Response(HTTP_OK, String.valueOf(fileId));
@@ -74,10 +79,10 @@ public class Session {
         Future<Response> futureResponse = threadPool.submit(() -> {
             Server.logger.fine("Get request in " + Thread.currentThread().getName());
             File file = Storage.getInstance().getFile(request.getFileIdentifier());
-            Server.logger.fine("Found file: " + file.getName());
-            if (!file.exists() || !file.isFile()) {
+            if (file == null) {
                 return new Response(HTTP_NOT_FOUND, "");
             } else {
+                Server.logger.fine("Found file: " + file.getName());
                 return new Response(HTTP_OK, "", file);
             }
         });
@@ -85,16 +90,16 @@ public class Session {
     }
 
     public void actionDelete(Request request) {
-        Server.logger.info("Delete request in " + Thread.currentThread().getName());
-        boolean wasDeleted = Storage.getInstance().deleteFile(request.getFileIdentifier());
-        Response response = wasDeleted ?
-                new Response(HTTP_OK, "") : new Response(HTTP_NOT_FOUND, "");
-        sendResponse(response);
+        Future<Response> futureResponse = threadPool.submit(() -> {
+            Server.logger.fine("Delete request in " + Thread.currentThread().getName());
+            boolean wasDeleted = Storage.getInstance().deleteFile(request.getFileIdentifier());
+            return wasDeleted ? new Response(HTTP_OK, "") : new Response(HTTP_NOT_FOUND, "");
+        });
+        pendingResponses.add(futureResponse);
     }
 
-
     private void futureCollector() {
-        while (!exitServer && !threadPool.isShutdown()) {
+        while (!threadPool.isShutdown()) {
             try {
                 for (Future<Response> future : pendingResponses) {
                     if (future.isDone()) {
@@ -111,7 +116,7 @@ public class Session {
     }
 
     private void sendResponse(Response response) {
-        logger.info("Sending response in thread " + Thread.currentThread().getName());
+        logger.fine("Sending response in thread " + Thread.currentThread().getName());
         synchronized (threadPool) {
             try {
                 toClient.writeUTF(response.toString());
@@ -122,7 +127,7 @@ public class Session {
                         bis.transferTo(toClient);
                         logger.fine(String.format("File sent: %d bytes", fileLength));
                     } catch (IOException e) {
-                        logger.severe("Server couldn't send file");
+                        logger.warning("Server couldn't send file");
                     }
                 }
                 logger.info("Response sent");
@@ -133,6 +138,7 @@ public class Session {
     }
 
     private void terminateThreads() {
+        logger.info("Shutting down thread pool");
         threadPool.shutdown();
         try {
             if (!threadPool.awaitTermination(2, TimeUnit.SECONDS)) {
@@ -143,7 +149,6 @@ public class Session {
             }
         } catch (InterruptedException e) {
             threadPool.shutdownNow();
-            Thread.currentThread().interrupt();
         }
     }
 }
