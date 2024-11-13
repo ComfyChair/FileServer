@@ -16,7 +16,7 @@ import java.util.logging.*;
 
 import static java.net.HttpURLConnection.*;
 
-/** Client for connecting to the FileServer */
+/** Client class for connecting to the FileServer */
 public class Client {
     private static final String EXPLAIN_RESPONSE = "The response says that";
     private static final Path dataPath = Path.of(System.getProperty("user.dir"),
@@ -26,17 +26,17 @@ public class Client {
     private DataOutputStream serverOut;
     private static final Logger logger = Logger.getLogger(Client.class.getName());
 
-    /** Entry point
-     * sleeps for half a second before connecting to allow for server startup during tests  */
+    /** entry point
+     * Sleeps for half a second before connecting to allow for server startup during tests. */
     public static void main(String[] args) throws InterruptedException {
         Client client = new Client();
         TimeUnit.MILLISECONDS.sleep(500);
         client.connect();
     }
 
-    /** Constructor
-     * creates data directory, if necessary, and checks for writing privileges */
-    public Client() {
+    /** constructor
+     * Creates data directory, if necessary, and checks for writing privileges. */
+    Client() {
         if (!dataPath.toFile().exists()) {
             boolean created = dataPath.toFile().mkdirs();
             if (!created ) {
@@ -54,12 +54,12 @@ public class Client {
      * prompts the user for a single request and
      * initiates sending the request.
      * Waits for the server to close its side of the connection after sending an EXIT request,
-     * or just closes the client connection for after sending any other request. */
-    public void connect() {
+     * or just closes the client connection after sending any other request. */
+    void connect() {
         try (Socket socket = new Socket(InetAddress.getByName(Server.ADDRESS), Server.PORT)) {
             serverIn = new DataInputStream(socket.getInputStream());
             serverOut = new DataOutputStream(socket.getOutputStream());
-            String action = "";
+            String action;
             System.out.println("Enter action (1 - get a file, 2 - save a file, 3 - delete a file): ");
             action = scanner.nextLine();
             switch (action) {
@@ -80,7 +80,7 @@ public class Client {
     }
 
     /** PUT request processing
-     * Prompts the user for source and destination file names and initiates sending the request */
+     * Prompts the user for source and destination file names and initiates sending the request. */
     private void sendPutRequest() throws IOException {
         System.out.println("Enter name of the file: ");
         String srcName = scanner.nextLine();
@@ -97,7 +97,7 @@ public class Client {
     }
 
     /** GET request processing
-     * gathers information regarding the file and initiates sending the request */
+     * gathers information regarding the file and initiates sending the request. */
     private void sendGetRequest() throws IOException {
         FileIdentifier identifier = readIdentifier();
         Request request = new Request(RequestType.GET, identifier);
@@ -105,7 +105,7 @@ public class Client {
     }
 
     /** DELETE request processing
-     * gathers information regarding the file and initiates sending the request */
+     * gathers information regarding the file and initiates sending the request. */
     private void sendDeleteRequest() throws IOException {
         FileIdentifier identifier = readIdentifier();
         Request request = new Request(RequestType.DELETE, identifier);
@@ -113,7 +113,7 @@ public class Client {
     }
 
     /** Prompts the user for the information necessary to identify a file;
-     * used for GET and DELETE requests
+     * used for GET and DELETE requests.
      * @return id or name of the file wrapped in a FileIdentifier object * */
     private FileIdentifier readIdentifier() {
         System.out.println("Do you want to get the file by identifier or by id (1 - name, 2 - id):");
@@ -131,7 +131,7 @@ public class Client {
         return new FileIdentifier(type, identifier);
     }
 
-    /** Send a Request to the FileServer
+    /** Sends a Request to the FileServer
      * @param request the request to be sent
      * @param file the file that should be sent with the request, or null otherwise */
     private void sendRequest(Request request, File file) throws IOException {
@@ -155,7 +155,7 @@ public class Client {
         }
     }
 
-    /** Waits for a Response, prints information on the content, and acts upon it if applicable
+    /** Waits for a Response, prints information on the content, and acts upon it if applicable.
      * @param request the request to which the response belongs */
     private void processResponse(Request request) throws IOException {
         try {
@@ -194,7 +194,7 @@ public class Client {
         }
     }
 
-    /** Saves a file to cwd/src/client/data as a result of a successful GET request */
+    /** Saves a file to cwd/src/client/data as a result of a successful GET request. */
     private void saveFile() {
         System.out.println("The file was downloaded! Specify a name for it: ");
         String fileName = scanner.nextLine();

@@ -56,7 +56,7 @@ public class Storage {
      * @param fileIdentifier the identifier of the file
      * @return the file if it exists or null otherwise
      * */
-    public File getFile(FileIdentifier fileIdentifier) {
+    File getFile(FileIdentifier fileIdentifier) {
         String fileName = index.getName(fileIdentifier);
         if (fileName != null){
             File file = storagePath.resolve(fileName).toFile();
@@ -69,7 +69,7 @@ public class Storage {
 
     /** Deletes file if file is found in index and exists
      * @return true if successful and false otherwise */
-    public boolean deleteFile(FileIdentifier fileIdentifier) {
+    boolean deleteFile(FileIdentifier fileIdentifier) {
         boolean success;
         String fileName = index.getName(fileIdentifier);
         if (fileName != null && storagePath.resolve(fileName).toFile().exists()){
@@ -92,7 +92,7 @@ public class Storage {
 
     /** Saves file if file of the same name is not yet in index
      * @return assigned file index if successful and -1 otherwise */
-    public int saveFile(String name, int fileLength, byte[] content) {
+    int saveFile(String name, int fileLength, byte[] content) {
         if (index.contains(name)) { return -1; }
         File file = storagePath.resolve(name).toFile();
         try (BufferedOutputStream bos = new BufferedOutputStream(new FileOutputStream(file))){
@@ -139,7 +139,7 @@ public class Storage {
     }
 
     /** Shows content of index for logging purposes */
-    public String showIndex() {
+    String showIndex() {
         return index.showContent();
     }
 }

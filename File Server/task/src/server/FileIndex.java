@@ -27,7 +27,7 @@ class FileIndex implements Serializable {
     /** Adds file to index by file name, and assigns a unique id to it
      * @param name the name of the file
      * @return assigned id for the file */
-    public int add(String name) {
+    int add(String name) {
         int id = fileIdCounter.getAndIncrement();
         nameToId.put(name, id);
         idToName.put(id, name);
@@ -37,7 +37,7 @@ class FileIndex implements Serializable {
     /** Checks for presence of a file
      * @param name the name of the file
      * @return true if file is present in the index, false otherwise */
-    public boolean contains(String name) {
+    boolean contains(String name) {
         return nameToId.containsKey(name);
     }
 
@@ -56,14 +56,14 @@ class FileIndex implements Serializable {
 
     /** Removes a file from the index
      * @param fileName the name of the file to be removed */
-    public void remove(String fileName) {
+    void remove(String fileName) {
         int id = nameToId.get(fileName);
         nameToId.remove(fileName);
         idToName.remove(id);
     }
 
     /** Shows content of index for logging purposes */
-    public String showContent() {
+    String showContent() {
         return idToName.toString();
     }
 }

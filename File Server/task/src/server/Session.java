@@ -22,7 +22,7 @@ public class Session {
     /** Session constructor
      * @param socket The socket by which the client is connected
      * @throws IOException if the client has already disconnected and data streams are therefore closed */
-    public Session(Socket socket) throws IOException {
+    Session(Socket socket) throws IOException {
         this.socket = socket;
         threadPool = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
         fromClient = new DataInputStream(socket.getInputStream());
@@ -32,7 +32,7 @@ public class Session {
 
     /** Starts response handling thread, parses client requests and handles client disconnects
      * @return true if client requested server should be shut down, false otherwise */
-    public boolean startLifecycle() {
+    boolean startLifecycle() {
         threadPool.submit(this::responseHandler);
         String rawRequest;
         while (!exitServer && !socket.isClosed()) {
@@ -66,7 +66,7 @@ public class Session {
 
     /** PUT request action
      * reads file from stream and initiates saving to Storage in a separate thread */
-    public void actionPut(Request request) throws IOException {
+    private void actionPut(Request request) throws IOException {
         String fileName = request.getFileIdentifier().value();
         int fileLength = fromClient.readInt();
         byte[] contents = new byte[fileLength];
@@ -85,7 +85,7 @@ public class Session {
 
     /** GET request action
      * initiates file query from Storage in a separate thread */
-    public void actionGet(Request request) {
+    private void actionGet(Request request) {
         Future<Response> futureResponse = threadPool.submit(() -> {
             Server.logger.fine("Get request in " + Thread.currentThread().getName());
             File file = Storage.getInstance().getFile(request.getFileIdentifier());
@@ -101,7 +101,7 @@ public class Session {
 
     /** DELETE request action
      * initiates deletion from Storage in a separate thread */
-    public void actionDelete(Request request) {
+    private void actionDelete(Request request) {
         Future<Response> futureResponse = threadPool.submit(() -> {
             Server.logger.fine("Delete request in " + Thread.currentThread().getName());
             boolean wasDeleted = Storage.getInstance().deleteFile(request.getFileIdentifier());

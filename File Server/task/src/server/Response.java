@@ -13,7 +13,7 @@ public final class Response {
      * @param code Response code (corresponding to java.net.HttpURLConnection codes)
      * @param info additional info: index of a saved file is response to GET request, empty string otherwise
      */
-    public Response(int code, String info) {
+    Response(int code, String info) {
         this.code = code;
         this.info = info;
     }
@@ -23,7 +23,7 @@ public final class Response {
      * @param info additional info: index of a saved file is response to GET request, empty string otherwise
      * @param file the file that is going to be sent back
      */
-    public Response(int code, String info, File file) {
+    Response(int code, String info, File file) {
         this.code = code;
         this.info = info;
         this.file = file;
